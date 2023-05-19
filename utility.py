@@ -458,3 +458,171 @@ def get_symbol_mark(vt_symbol:str) -> str:
             symbol_mark = remain_alpha(vt_symbol).upper()
             
     return symbol_mark
+#-----------------------------------------------------------------------
+def quarter_date_count(now_datetime:datetime):
+    """
+    1.季度合约日期计算
+    2.返回季度合约月份日期和第二周周五所在日
+    """
+    current_month = now_datetime.month
+    if current_month <=3:
+        target_month = 3
+        target_date = datetime.strptime(f"{now_datetime.year}-04-01","%Y-%m-%d")
+    elif 3 < current_month <=6:
+        target_month = 6
+        target_date = datetime.strptime(f"{now_datetime.year}-07-01","%Y-%m-%d")
+    elif 6 < current_month <=9:
+        target_month = 9
+        target_date = datetime.strptime(f"{now_datetime.year}-10-01","%Y-%m-%d")
+    elif 9 < current_month <=12:
+        target_month = 12
+        target_date = datetime.strptime(f"{now_datetime.year+1}-01-01","%Y-%m-%d")
+    days_ago = (7 + target_date.weekday() - 4) % 7          #季度合约周五结算,weekday:4
+    if days_ago == 0:
+        days_ago = 7
+    target_date -= timedelta(days_ago)
+    target_year = target_date.year
+    target_day = target_date.day
+    return (target_year,target_month,target_day),target_day-14
+#-----------------------------------------------------------------------
+def get_quarter_postfix(now_datetime:datetime):
+    """
+    返回季度合约symbol后缀
+    """
+    if not now_datetime:
+        now_datetime = datetime.now(TZ_INFO)
+    quarter_date,second_weekday = quarter_date_count(now_datetime)
+    quarter_year,quarter_month,quarter_day = quarter_date
+    if quarter_year == now_datetime.year and quarter_month ==  now_datetime.month and now_datetime.day >= second_weekday and  now_datetime.hour >= 16:
+        target_datetime = now_datetime+ relativedelta(months=1)
+        quarter_date,second_weekday = quarter_date_count(target_datetime)
+        quarter_year,quarter_month,quarter_day = quarter_date
+
+    if quarter_month < 10:
+        symbol_postfix = f"{str(quarter_year)[-2:]}0{quarter_month}{quarter_day}"
+    else:
+        symbol_postfix = f"{str(quarter_year)[-2:]}{quarter_month}{quarter_day}"
+    return symbol_postfix
+#-----------------------------------------------------------------------
+def current_date_count(current_month:int):
+    """
+    计算月份最后一个周五所在日期
+    """
+    end_date = datetime.now(TZ_INFO)   
+    if current_month < 12:      
+        target_date = datetime.strptime(f"{end_date.year}-{current_month+1}-01","%Y-%m-%d")
+    else:
+        target_date = datetime.strptime(f"{end_date.year+1}-01-01","%Y-%m-%d")
+    days_ago = (7 + target_date.weekday() - 4) % 7          #周五结算,weekday:4
+    if days_ago == 0:
+        days_ago = 7
+    target_date -= timedelta(days_ago)
+    target_year = target_date.year
+    target_day = target_date.day
+    return target_year,current_month,target_day
+#-----------------------------------------------------------------------
+def get_friday_postfix():
+    """
+    返回月份每个周五所在日期str
+    """
+    current_year,current_month,current_day = current_date_count(datetime.now(TZ_INFO).month)
+    if datetime.now(TZ_INFO).day > current_day:
+        current_year,current_month,current_day = current_date_count(datetime.now(TZ_INFO).month+1)   
+    if current_month < 10:
+        month_zero_mark = "0"
+    else:
+        month_zero_mark = ""
+    postfix_1 = f"{str(current_year)[-2:]}{month_zero_mark}{current_month}0{current_day-21}"
+    postfix_2 = f"{str(current_year)[-2:]}{month_zero_mark}{current_month}{current_day-14}"
+    postfix_3 = f"{str(current_year)[-2:]}{month_zero_mark}{current_month}{current_day-7}"
+    postfix_4 = f"{str(current_year)[-2:]}{month_zero_mark}{current_month}{current_day}"
+
+    return postfix_1,postfix_2,postfix_3,postfix_4
+#-----------------------------------------------------------------------
+def get_current_next_postfix():
+    """
+    返回当周，次周合约后缀
+    """
+    postfix_1,postfix_2,postfix_3,postfix_4 = get_friday_postfix()
+    if datetime.now(TZ_INFO).day < 10:
+        int_now_date = int(f"{datetime.now(TZ_INFO).month}0{datetime.now(TZ_INFO).day}")
+    else:
+        int_now_date = int(f"{datetime.now(TZ_INFO).month}{datetime.now(TZ_INFO).day}")
+    if int_now_date <= int(postfix_1[-4:]):
+        current_symbol_postfix = postfix_1
+        next_symbol_postfix = postfix_2
+    elif int(postfix_1[-4:]) < int_now_date <=int(postfix_2[-4:]):
+        current_symbol_postfix = postfix_2
+        next_symbol_postfix = postfix_3
+    elif int(postfix_2[-4:]) < int_now_date <=int(postfix_3[-4:]):
+        current_symbol_postfix = postfix_3
+        next_symbol_postfix = postfix_4   
+    elif int(postfix_3[-4:]) < int_now_date <=int(postfix_4[-4:]):
+        postfix_1_datetime = datetime.strptime(f"{str(datetime.now(TZ_INFO).year)[:2]}{postfix_4}","%Y%m%d") + timedelta(days = 7)
+        if postfix_1_datetime.month < 10:
+            zero_mark = "0"
+        else:
+            zero_mark = ""
+        postfix_1 = f"{str(postfix_1_datetime.year)[-2:]}{zero_mark}{postfix_1_datetime.month}0{postfix_1_datetime.day}"
+        current_symbol_postfix = postfix_4   
+        next_symbol_postfix = postfix_1
+    return current_symbol_postfix,next_symbol_postfix
+#------------------------------------------------------------------------------------
+class SendFile:
+    """
+    * 钉钉发送文件
+    * 需要钉钉后台绑定ip地址https://open-dev.dingtalk.com/fe/app#/appMgr/inner/eapp/1484669569/2
+    * https://open-dev.dingtalk.com/获取CorpId
+    * 应用开发/企业内部开发/应用信息获取AppKey，AppSecret
+    """
+    #------------------------------------------------------------------------------------
+    def __init__(self):
+        self.appkey = "XXX"
+        self.appsecret = "XXX"
+    #------------------------------------------------------------------------------------
+    def get_access_token(self):
+        url = f"https://oapi.dingtalk.com/gettoken?appkey={self.appkey}&appsecret={self.appsecret}"
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded"
+        }
+        data = {"appkey": self.appkey,
+                "appsecret": self.appsecret}
+        data = requests.request("GET", url, data=data, headers=headers)
+        access_token = data.json()["access_token"]
+        return access_token
+    #------------------------------------------------------------------------------------
+    def get_media_id(self,file_path:str):
+        access_token = self.get_access_token()  # 拿到接口凭证
+        url = f"https://oapi.dingtalk.com/media/upload?access_token={access_token}&type=file"
+        files = {"media": open(file_path, "rb")}
+        js_data = {"access_token": access_token,
+                "type": "file"}
+        response = requests.post(url, files=files, data=js_data)
+        data = response.json()
+        if data["errcode"]:
+            print(f"获取media_id出错，错误代码：{data['errcode']}，错误信息：{data['errmsg']}")
+            return
+        return data["media_id"]
+    #------------------------------------------------------------------------------------
+    def send_file(self,file_path:str):
+        """
+        * 发送文件到钉钉
+        * 钉钉扫描http://wsdebug.dingtalk.com/定位到v0.1.2输入{"corpId":"XXX","isAllowCreateGroup":true,"filterNotOwnerGroup":false}获取chatid
+        """
+        access_token = self.get_access_token()
+        media_id = self.get_media_id(file_path)
+        chatid = "XXX"
+        url = "https://oapi.dingtalk.com/chat/send?access_token=" + access_token
+        header = {
+            "Content-Type": "application/json"
+        }
+        js_data = {"access_token": access_token,
+                "chatid": chatid,
+                "msg": {
+                    "msgtype": "file",
+                    "file": {"media_id": media_id}
+                }}
+        request_data = requests.request("POST", url, data=json.dumps(js_data), headers=header)
+        data = request_data.json()
+        if data["errcode"]:
+            print(f"发送文件出错，错误代码：{data['errcode']}，错误信息：{data['errmsg']}")
